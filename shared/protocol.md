@@ -46,3 +46,5 @@ The team's planning docs used two slightly different message shapes. We keep the
 - P4 exports from `web/lib/audioStream.ts`: `startStream(url, onMessage, source): Promise<{ stop(), analyser, ws }>` with `source` of `"mic"` or `"tab"`.
 - P4 exports `web/components/audio/WaveformCanvas.tsx` with props `{ analyser: AnalyserNode | null; threat: boolean }`.
 - P3 owns the single hook `web/lib/useDecibelSocket.ts` that calls `startStream` in live mode and a mock generator in mock mode. `onMessage` receives parsed contract JSON.
+
+**Backend transcript/threat behavior (P2-23/P2-24):** The backend retains only the five most recent final transcript sentences for scam context; interim transcripts are ignored, and scam classification starts no more than once every three seconds per connection. A scam result is optional and is exposed in the separate `scam` field. The voice-state machine continues to operate unchanged. The reported overall `state` is `THREAT_DETECTED` if the existing voice threat condition is met, or if `scam.risk` is `high` while `smoothed >= 0.40`.
