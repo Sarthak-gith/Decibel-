@@ -6,7 +6,7 @@ import { startMock } from "./mock";
 import { useDecibelStore } from "./store";
 import type { DecibelPayload, DecibelState } from "./types";
 
-export type DecibelMode = "mock" | "live";
+export type DecibelMode = "mock" | "live" | "replay";
 export type AudioSource = "mic" | "tab";
 export type StreamHandle = {
   stop: () => void;
@@ -84,9 +84,29 @@ export function useDecibelSocket() {
       else if (payload.state) setError(null);
     };
     try {
-      const next: StreamHandle = mode === "mock"
-        ? startMock(onMessage)
-        : await startStream("ws://localhost:8000/stream", onMessage, source);
+      let next: StreamHandle;
+      if (mode === "mock") next = startMock(onMessage);
+      else if (mode === "live") next = await startStream("ws://localhost:8000/stream", onMessage, source);
+      else {
+        // P2's tools/replay.py streams recorded JSON without capturing audio.
+        const ws = new WebSocket("ws://localhost:8001/stream");
+        next = { ws, stop: () => ws.close() };
+        ws.onopen = () => onMessage({ type: "status", state: "LISTENING", ts: Date.now() });
+        ws.onmessage = (event) => {
+          try { onMessage(JSON.parse(event.data)); }
+          catch { if (token === generation.current) setError("Replay returned an unreadable message."); }
+        };
+        ws.onerror = () => {
+          if (token !== generation.current) return;
+          stop();
+          setError("Replay connection failed. Start tools/replay.py with a recorded session.");
+        };
+        ws.onclose = (event) => {
+          if (token !== generation.current) return;
+          stop();
+          setError(event.code === 1000 ? "Replay complete. Recorded session retained." : "Replay disconnected. Check the local replay server.");
+        };
+      }
       if (token !== generation.current) {
         next.stop();
         return;
