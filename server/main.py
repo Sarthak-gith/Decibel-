@@ -17,6 +17,7 @@ HOP_SEC = float(os.getenv("HOP_SEC", "1"))
 MIN_SEC = 1.5
 VAD_RMS = float(os.getenv("VAD_RMS", "0.01"))
 ENGINE = None
+INFERENCE_LOCK = asyncio.Lock()
 
 @asynccontextmanager
 async def lifespan(app):
@@ -62,7 +63,18 @@ async def stream(ws: WebSocket):
             voiced = is_voiced(snap)
             p, lat = 0.0, 0
             if voiced:
-                res = await asyncio.to_thread(ENGINE.predict, snap)
+                try:
+                    async with INFERENCE_LOCK:
+                        inference_started = time.perf_counter()
+                        try:
+                            res = await asyncio.to_thread(ENGINE.predict, snap)
+                        finally:
+                            inference_duration = time.perf_counter() - inference_started
+                            if inference_duration > HOP_SEC:
+                                print(f"[warning] inference took {inference_duration:.3f}s (HOP_SEC={HOP_SEC})")
+                except Exception as exc:
+                    await ws.send_json({"type": "error", "message": str(exc)})
+                    continue
                 p, lat = res["p_fake"], res["latency_ms"]
             smoothed, state = sm.update(p, voiced)
             p_fake = round(p, 4) if voiced else 0
@@ -85,9 +97,16 @@ async def stream(ws: WebSocket):
             if msg.get("type") == "websocket.disconnect":
                 break
             if msg.get("bytes"):
-                buf.append(np.frombuffer(msg["bytes"], dtype="<i2").astype(np.float32) / 32768.0)
+                data = msg["bytes"]
+                if len(data) % 2:
+                    data = data[:-1]
+                if data:
+                    buf.append(np.frombuffer(data, dtype="<i2").astype(np.float32) / 32768.0)
             elif msg.get("text"):
-                data = json.loads(msg["text"])
+                try:
+                    data = json.loads(msg["text"])
+                except json.JSONDecodeError:
+                    continue
                 if data.get("type") == "transcript" and data.get("text"):
                     res = await asyncio.to_thread(scam.classify, data["text"])
                     if res:
