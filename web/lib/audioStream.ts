@@ -5,7 +5,7 @@ export async function startStream(
 ): Promise<{ stop(): void; analyser: AnalyserNode; ws: WebSocket }> {
   let audioCtx: AudioContext;
   let stream: MediaStream;
-  let ws: WebSocket;
+  let ws = {} as WebSocket;
   let workletNode: AudioWorkletNode;
   
   let sampleBuffer = new Float32Array(8000);
@@ -79,12 +79,15 @@ export async function startStream(
     for (let i = 0; i < data.length; i++) {
       sampleBuffer[bufferIndex++] = data[i];
       if (bufferIndex === 8000) {
-        const int16Buffer = new Int16Array(8000);
+        // EXPLICIT LITTLE-ENDIAN ENCODING
+        const buffer = new ArrayBuffer(16000);
+        const view = new DataView(buffer);
         for (let j = 0; j < 8000; j++) {
           let s = Math.max(-1, Math.min(1, sampleBuffer[j]));
-          int16Buffer[j] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+          let val = s < 0 ? s * 0x8000 : s * 0x7FFF;
+          view.setInt16(j * 2, val, true); // true = little-endian
         }
-        if (ws && ws.readyState === WebSocket.OPEN) ws.send(int16Buffer.buffer);
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(buffer);
         bufferIndex = 0;
       }
     }
