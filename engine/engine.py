@@ -15,10 +15,11 @@ from torch import nn
 HIDDEN_SIZE = 1536
 FEATURE_SIZE = 128
 SAMPLE_RATE = 16000
-MAX_AUDIO_SAMPLES = 480000
+MIN_AUDIO_SAMPLES = int(1.5 * SAMPLE_RATE)
+MAX_AUDIO_SAMPLES = 29 * SAMPLE_RATE
 
 
-class Engine:
+class DecibelEngine:
     """Run Gemma4's exported audio tower and the frozen binary head locally."""
 
     def __init__(
@@ -85,12 +86,14 @@ class Engine:
             raise TypeError(f"Audio dtype must be float32, got {audio.dtype}.")
         if audio.ndim != 1:
             raise ValueError(f"Audio must be mono and one-dimensional, got {audio.shape}.")
-        if audio.size == 0:
-            raise ValueError("Audio must contain at least one sample.")
+        if audio.size < MIN_AUDIO_SAMPLES:
+            raise ValueError("Audio duration must be at least 1.5 seconds.")
         if audio.size > MAX_AUDIO_SAMPLES:
-            raise ValueError("Audio duration must not exceed 30 seconds.")
+            raise ValueError("Audio duration must not exceed 29 seconds.")
         if not np.isfinite(audio).all():
             raise ValueError("Audio contains NaN or infinite samples.")
+        if np.any(audio < -1.0) or np.any(audio > 1.0):
+            raise ValueError("Audio samples must be within [-1, 1].")
 
         if self.device.type == "cuda":
             torch.cuda.synchronize(self.device)
@@ -120,9 +123,9 @@ class Engine:
                 raise RuntimeError("Audio tower output must be finite float32.")
             logits = self.classifier(hidden.mean(dim=1))
             probabilities = torch.softmax(logits, dim=-1)[0]
-            predicted_class = int(torch.argmax(logits, dim=-1).item())
             p_fake = float(probabilities[1].item())
-            confidence = float(probabilities[predicted_class].item())
+            predicted_fake = p_fake >= 0.5
+            confidence = max(p_fake, 1.0 - p_fake)
 
         if self.device.type == "cuda":
             torch.cuda.synchronize(self.device)
@@ -130,7 +133,35 @@ class Engine:
         return {
             "p_fake": p_fake,
             "fake_probability": p_fake,
-            "verdict": "fake" if predicted_class == 1 else "real",
+            "verdict": "Fake" if predicted_fake else "Real",
             "confidence": confidence,
             "latency_ms": latency_ms,
         }
+
+
+class FakeEngine:
+    """Deterministic no-model fallback for P2's explicit DECIBEL_FAKE mode."""
+
+    def predict(
+        self, audio: np.ndarray, sampling_rate: int = SAMPLE_RATE
+    ) -> dict[str, Any]:
+        if sampling_rate != SAMPLE_RATE:
+            raise ValueError(f"Audio must be sampled at {SAMPLE_RATE} Hz.")
+        if (
+            not isinstance(audio, np.ndarray)
+            or audio.dtype != np.float32
+            or audio.ndim != 1
+        ):
+            raise TypeError("Audio must be a one-dimensional float32 NumPy array.")
+        p_fake = 0.0
+        return {
+            "p_fake": p_fake,
+            "fake_probability": p_fake,
+            "verdict": "Fake" if p_fake >= 0.5 else "Real",
+            "confidence": max(p_fake, 1.0 - p_fake),
+            "latency_ms": 0.0,
+        }
+
+
+# Keep the P1 script import path working while exposing the class name P2 imports.
+Engine = DecibelEngine
