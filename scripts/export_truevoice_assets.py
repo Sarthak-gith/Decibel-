@@ -12,6 +12,7 @@ import hashlib
 import importlib.metadata
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -90,6 +91,19 @@ def _hash_manifest(root: Path, model_revision: str, versions: dict[str, str]) ->
     }
 
 
+def _resolve_model_revision() -> str:
+    """Resolve the current model ref to its immutable Hub commit SHA."""
+    from huggingface_hub import HfApi
+
+    model_info = HfApi().model_info(repo_id=MODEL_ID)
+    revision = getattr(model_info, "sha", None)
+    if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise RuntimeError(
+            "Hugging Face Hub did not return a valid pinned model commit SHA."
+        )
+    return revision
+
+
 def export_assets(classifier_path: Path, output_path: Path) -> None:
     import numpy as np
     import torch
@@ -124,10 +138,11 @@ def export_assets(classifier_path: Path, output_path: Path) -> None:
         raise FileExistsError(f"Refusing to overwrite existing bundle: {output_path}")
     _verify_classifier_head(classifier_path)
 
-    config = AutoConfig.from_pretrained(MODEL_ID)
-    model_revision = getattr(config, "_commit_hash", None)
-    if not model_revision:
-        raise RuntimeError("Hugging Face did not return a pinned model revision.")
+    # Resolve the mutable model ID once through the Hub API, then pass that
+    # immutable commit to every loader and record it in the export manifest.
+    # HfApi uses the normal HF_TOKEN / cached-login authentication chain.
+    model_revision = _resolve_model_revision()
+    config = AutoConfig.from_pretrained(MODEL_ID, revision=model_revision)
     if getattr(config, "audio_config", None) is None:
         raise RuntimeError("The selected Gemma config has no audio tower.")
 
