@@ -81,11 +81,25 @@ def import_assets(archive_path: Path, destination: Path, overwrite: bool = False
 
         required = [
             staging_root / "audio_tower" / "config.json",
-            staging_root / "processor" / "preprocessor_config.json",
             staging_root / "classifier_head.pt",
         ]
-        if not all(path.is_file() for path in required):
-            missing = [str(path.relative_to(staging_root)) for path in required if not path.is_file()]
+        processor_configs = [
+            staging_root / "processor" / "processor_config.json",
+            staging_root / "processor" / "preprocessor_config.json",
+        ]
+        if not all(path.is_file() for path in required) or not any(
+            path.is_file() for path in processor_configs
+        ):
+            missing = [
+                str(path.relative_to(staging_root))
+                for path in required
+                if not path.is_file()
+            ]
+            if not any(path.is_file() for path in processor_configs):
+                missing.append(
+                    "processor/processor_config.json or "
+                    "processor/preprocessor_config.json"
+                )
             raise ValueError(f"Required inference asset(s) missing: {missing}")
 
         if destination.exists():
