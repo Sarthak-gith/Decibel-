@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head><title>Decibel Audio Lab</title></head>
+<body style="font-family: sans-serif; background: #111; color: #eee; padding: 20px;">
+  <h2>Decibel Audio Lab</h2>
+  <button id="startBtn" style="padding: 10px 20px; margin-right: 10px;">Start Mic</button>
+  <button id="tabBtn" style="padding: 10px 20px; margin-right: 10px;">Start Tab Audio</button>
+  <button id="stopBtn" disabled style="padding: 10px 20px; margin-right: 10px;">Stop</button>
+  <button id="wavBtn" disabled style="padding: 10px 20px;">Download 5s WAV</button>
+  
+  <canvas id="waveform" width="800" height="150" style="background:#000; border:1px solid #333; margin-top:20px; display:block; width:100%; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);"></canvas>
+  
+  <pre id="log" style="background:#222; padding:10px; height:200px; overflow:auto; margin-top: 20px; border: 1px solid #444;"></pre>
+  <script src="main.js"></script>
+</body>
+</html>
