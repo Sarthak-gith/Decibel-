@@ -1,7 +1,8 @@
 """Run from project root:  uvicorn server.main:app --port 8000
 Dev without the model:    DECIBEL_FAKE=1 uvicorn server.main:app --port 8000   (Windows: set DECIBEL_FAKE=1)
 """
-import asyncio, json, os, time
+import asyncio, json, os, re, time
+from collections import deque
 from contextlib import asynccontextmanager
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -64,6 +65,9 @@ async def stream(ws: WebSocket):
     buf = RollingBuffer(int(WINDOW_SEC * SR))
     sm = StateMachine()
     scam_state = {"last": None}
+    transcript_context = deque(maxlen=5)
+    last_classify_at = 0.0
+    classify_task = None
     os.makedirs("logs", exist_ok=True)
     log = open(os.path.join("logs", "session.jsonl"), "a")
     await ws.send_json({"type": "status", "state": "LISTENING", "ts": int(time.time() * 1000)})
@@ -91,6 +95,9 @@ async def stream(ws: WebSocket):
                     continue
                 p, lat = res["p_fake"], res["latency_ms"]
             smoothed, state = sm.update(p, voiced)
+            if (scam_state["last"] and scam_state["last"].get("risk") == "high"
+                    and smoothed >= 0.40):
+                state = "THREAT_DETECTED"
             p_fake = round(p, 4) if voiced else 0
             timestamp_ms = int(time.time() * 1000)
             payload = {"type": "verdict", "ts": timestamp_ms, "timestamp_ms": timestamp_ms,
@@ -122,11 +129,30 @@ async def stream(ws: WebSocket):
                 except json.JSONDecodeError:
                     continue
                 if data.get("type") == "transcript" and data.get("text"):
-                    res = await asyncio.to_thread(scam.classify, data["text"])
-                    if res:
-                        scam_state["last"] = res
+                    text = data["text"]
+                    if data.get("final") is not True or not isinstance(text, str):
+                        continue
+                    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
+                    transcript_context.extend(sentences)
+                    now = time.monotonic()
+                    if (sentences and now - last_classify_at >= 3.0
+                            and (classify_task is None or classify_task.done())):
+                        last_classify_at = now
+                        context = " ".join(transcript_context)
+
+                        async def classify_context(combined_text):
+                            try:
+                                result = await asyncio.to_thread(scam.classify, combined_text)
+                                if result is not None:
+                                    scam_state["last"] = result
+                            except Exception as exc:
+                                print(f"[scam] classification failed: {exc}")
+
+                        classify_task = asyncio.create_task(classify_context(context))
     except WebSocketDisconnect:
         pass
     finally:
         task.cancel()
+        if classify_task is not None:
+            classify_task.cancel()
         log.close()
