@@ -1,6 +1,8 @@
 """Optional scam-intent layer: transcript text -> Ollama Gemma -> JSON.
 Set OLLAMA_MODEL to a Gemma tag you have pulled (check `ollama list`)."""
-import json, os, urllib.request
+import json
+import os
+import urllib.request
 
 URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 MODEL = os.getenv("OLLAMA_MODEL", "gemma4:e4b")
@@ -22,8 +24,16 @@ def classify(text):
         req = urllib.request.Request(URL, body, {"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=20) as r:
             out = json.loads(json.loads(r.read())["response"])
-        if out.get("risk") in ("low", "medium", "high"):
-            return out
+        if not isinstance(out, dict) or out.get("risk") not in ("low", "medium", "high"):
+            return None
+        tactics = out.get("tactics", [])
+        if not isinstance(tactics, list):
+            tactics = []
+        return {
+            "risk": out["risk"],
+            "tactics": [item for item in tactics if isinstance(item, str)],
+            "reason": str(out.get("reason", ""))[:160],
+        }
     except Exception as e:
         print("[scam] failed:", e)
     return None
