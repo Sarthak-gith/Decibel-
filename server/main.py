@@ -37,6 +37,20 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 def health():
     return {"engine": type(ENGINE).__name__}
 
+@app.get("/config")
+def config():
+    state_config = StateMachine()
+    return {
+        "WINDOW_SEC": WINDOW_SEC,
+        "HOP_SEC": HOP_SEC,
+        "VAD_RMS": VAD_RMS,
+        "STATE_ALPHA": state_config.alpha,
+        "STATE_THREAT": state_config.threat,
+        "STATE_CAUTION": state_config.caution,
+        "STATE_SECURE": state_config.secure,
+        "STATE_NEED": state_config.need,
+    }
+
 def is_voiced(audio, frame=480, min_frac=0.3):
     n = len(audio) // frame
     if n == 0:
