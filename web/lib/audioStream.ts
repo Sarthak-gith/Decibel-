@@ -5,7 +5,7 @@ export async function startStream(
 ): Promise<{ stop(): void; analyser: AnalyserNode; ws: WebSocket }> {
   let audioCtx: AudioContext;
   let stream: MediaStream;
-  let ws: WebSocket;
+  let ws = {} as WebSocket;
   let workletNode: AudioWorkletNode;
   
   let sampleBuffer = new Float32Array(8000);
