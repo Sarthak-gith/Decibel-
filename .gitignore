@@ -223,3 +223,5 @@ __marimo__/
 !web/lib/**
 /web/node_modules/
 /web/.next/
+# Runtime-exported pretrained weights; never commit model assets.
+engine/assets/
