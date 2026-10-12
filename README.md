@@ -161,3 +161,9 @@ Decibel is intended to support voice authenticity assessment, not to establish i
 ---
 
 **Decibel — Listen closely. Detect intelligently.**
+
+## 🏆 Achievement
+
+🥈 **2nd Place — Android Club VIT Chennai Hacktoberfest 2026 Hack Day**
+
+Recognized for the Decibel project in the **Best Use of Gemma 4** track.
